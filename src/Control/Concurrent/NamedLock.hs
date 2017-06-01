@@ -29,7 +29,7 @@ where
 
 import Control.Concurrent
 import qualified Data.Map as M
-import Control.Exception ( block, unblock, onException )
+import Control.Exception ( mask, onException )
 
 newtype LockPool name = LockPool (MVar (M.Map name NLItem))
   
@@ -43,7 +43,7 @@ newLockPool = LockPool `fmap` newMVar M.empty
 -- | Grab the lock with given name.  Blocks until the lock becomes
 -- available.
 grabNamedLock :: Ord name => LockPool name -> name -> IO ()
-grabNamedLock (LockPool mvar) name = block $ do
+grabNamedLock (LockPool mvar) name = mask $ \_ -> do
   mp <- takeMVar mvar
   case M.lookup name mp of
     Nothing -> do
@@ -71,7 +71,7 @@ grabNamedLock (LockPool mvar) name = block $ do
 -- The released lock must have previously been grabbed via
 -- 'grabNamedLock'.
 releaseNamedLock :: Ord name => LockPool name -> name -> IO ()
-releaseNamedLock (LockPool mvar) name = block $ do
+releaseNamedLock (LockPool mvar) name = mask $ \_ -> do
   mp <- takeMVar mvar
   case M.lookup name mp of
     Nothing -> do
@@ -97,9 +97,9 @@ releaseNamedLock (LockPool mvar) name = block $ do
 -- If the action throws an exception, the lock is released an the
 -- exception propagated.  Returns the result of the action.
 withNamedLock :: Ord name => LockPool name -> name -> IO a -> IO a
-withNamedLock pool name action = block $ do
+withNamedLock pool name action = mask $ \unmask -> do
   grabNamedLock pool name
-  unblock action `onException` releaseNamedLock pool name
+  unmask action `onException` releaseNamedLock pool name
 
 {-
 -- Use this for testing.
